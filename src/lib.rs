@@ -318,7 +318,10 @@ fn ctx_search(db: &std::path::Path, params: &Value) -> Value {
                     break;
                 }
             }
-            let end_line = hit.start_line + lines.len() as u64 - 1;
+            let end_line = hit
+                .start_line
+                .saturating_add(lines.len() as u64)
+                .saturating_sub(1);
             section.push_str(&format!(
                 "── {} {} L{}-L{} ──\n{}\n",
                 hit.label,
