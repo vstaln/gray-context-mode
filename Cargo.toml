@@ -1,0 +1,25 @@
+[package]
+name = "gray-context-mode"
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.85"
+license = "MIT"
+description = "Sandboxed exec + FTS5 knowledge base — big command outputs stay out of context"
+
+[lib]
+name = "gray_context_mode"
+path = "src/lib.rs"
+
+[[bin]]
+name = "gray-context-mode"
+path = "src/main.rs"
+
+[dependencies]
+rusqlite = { version = "0.32", features = ["bundled"] }
+serde_json = "1"
+
+[dev-dependencies]
+tempfile = "3"
+
+[profile.release]
+strip = true
