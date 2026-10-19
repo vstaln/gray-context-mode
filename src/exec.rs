@@ -10,9 +10,9 @@
 
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
+#[cfg(not(windows))]
 use std::sync::OnceLock;
 use std::time::{Duration, Instant};
-use std::os::unix::process::ExitStatusExt;
 
 /// Default wall-clock limit and the hard cap on the `timeout_ms` arg.
 pub const DEFAULT_TIMEOUT_MS: u64 = 120_000;
@@ -80,6 +80,7 @@ fn scratch_dir(tag: &str) -> Result<PathBuf, String> {
 /// Cached `bwrap --version` + preflight result. Preflight runs the real
 /// bind shape so broken-userns hosts fall back to "cwd" instead of failing
 /// every exec.
+#[cfg(not(windows))]
 fn bwrap_ok() -> bool {
     static OK: OnceLock<bool> = OnceLock::new();
     *OK.get_or_init(|| {
@@ -100,6 +101,7 @@ fn bwrap_ok() -> bool {
     })
 }
 
+#[cfg(not(windows))]
 fn timeout_ok() -> bool {
     static OK: OnceLock<bool> = OnceLock::new();
     *OK.get_or_init(|| {
@@ -126,7 +128,8 @@ fn scrub_env(cmd: &mut Command) {
     cmd.env("NO_COLOR", "1");
 }
 
-/// Run `command` through bash with stdout/stderr captured to files.
+/// Run `command` through the platform shell (`bash -c`, `cmd /C` on
+/// Windows) with stdout/stderr captured to files.
 /// `cwd`: caller-requested work dir (must exist); None → fresh scratch dir.
 pub fn run(
     command: &str,
@@ -152,40 +155,54 @@ pub fn run(
     let stderr_file = std::fs::File::create(capture_dir.join("stderr.log"))
         .map_err(|e| format!("capture stderr: {e}"))?;
 
-    let secs = format!("{}", (timeout_ms as f64 / 1000.0).ceil() as u64);
-    let (sandbox, mut cmd) = if bwrap_ok() {
-        let mut c = Command::new("bwrap");
-        c.args([
-            "--die-with-parent",
-            "--ro-bind", "/", "/",
-            "--dev", "/dev",
-            "--proc", "/proc",
-            "--tmpfs", "/tmp",
-        ]);
-        c.arg("--bind").arg(&workdir).arg(&workdir);
-        if capture_dir != workdir {
-            c.arg("--bind").arg(&capture_dir).arg(&capture_dir);
-        }
-        c.arg("--setenv").arg("TMPDIR").arg(&capture_dir);
-        c.arg("--chdir").arg(&workdir).arg("--");
-        if timeout_ok() {
-            c.args(["timeout", "-k", "5", &secs, "bash", "-c", command]);
+    #[cfg(not(windows))]
+    let (sandbox, mut cmd) = {
+        let secs = format!("{}", (timeout_ms as f64 / 1000.0).ceil() as u64);
+        if bwrap_ok() {
+            let mut c = Command::new("bwrap");
+            c.args([
+                "--die-with-parent",
+                "--ro-bind", "/", "/",
+                "--dev", "/dev",
+                "--proc", "/proc",
+                "--tmpfs", "/tmp",
+            ]);
+            c.arg("--bind").arg(&workdir).arg(&workdir);
+            if capture_dir != workdir {
+                c.arg("--bind").arg(&capture_dir).arg(&capture_dir);
+            }
+            c.arg("--setenv").arg("TMPDIR").arg(&capture_dir);
+            c.arg("--chdir").arg(&workdir).arg("--");
+            if timeout_ok() {
+                c.args(["timeout", "-k", "5", &secs, "bash", "-c", command]);
+            } else {
+                c.args(["bash", "-c", command]);
+            }
+            ("bwrap", c)
         } else {
-            c.args(["bash", "-c", command]);
+            let mut c = if timeout_ok() {
+                let mut t = Command::new("timeout");
+                t.args(["-k", "5", &secs, "bash", "-c", command]);
+                t
+            } else {
+                let mut t = Command::new("bash");
+                t.args(["-c", command]);
+                t
+            };
+            c.current_dir(&workdir);
+            c.env("TMPDIR", &capture_dir);
+            ("cwd", c)
         }
-        ("bwrap", c)
-    } else {
-        let mut c = if timeout_ok() {
-            let mut t = Command::new("timeout");
-            t.args(["-k", "5", &secs, "bash", "-c", command]);
-            t
-        } else {
-            let mut t = Command::new("bash");
-            t.args(["-c", command]);
-            t
-        };
+    };
+    // Windows has no bwrap/timeout/bash: `cmd /C` + the watchdog below is
+    // the whole sandbox story — process-tree kill is best-effort.
+    #[cfg(windows)]
+    let (sandbox, mut cmd) = {
+        let mut c = Command::new("cmd");
+        c.args(["/C", command]);
         c.current_dir(&workdir);
-        c.env("TMPDIR", &capture_dir);
+        c.env("TMP", &capture_dir);
+        c.env("TEMP", &capture_dir);
         ("cwd", c)
     };
     scrub_env(&mut cmd);
@@ -199,16 +216,14 @@ pub fn run(
     let start = Instant::now();
     let deadline = start + Duration::from_millis(timeout_ms) + KILL_GRACE;
     let mut timed_out = false;
-    let status = loop {
+    let exit_code = loop {
         match child.try_wait() {
-            Ok(Some(status)) => break status,
+            Ok(Some(status)) => break status.code(),
             Ok(None) => {
                 if Instant::now() > deadline {
                     let _ = child.kill();
                     timed_out = true;
-                    break child.wait().unwrap_or_else(|_| {
-                        std::process::ExitStatus::from_raw(1 << 8)
-                    });
+                    break child.wait().ok().and_then(|s| s.code());
                 }
                 std::thread::sleep(Duration::from_millis(15));
             }
@@ -216,10 +231,10 @@ pub fn run(
         }
     };
     // `timeout` reports 124; the watchdog sets the flag itself.
-    timed_out = timed_out || status.code() == Some(124);
+    timed_out = timed_out || exit_code == Some(124);
     Ok(ExecResult {
         capture_dir,
-        exit_code: status.code(),
+        exit_code,
         timed_out,
         duration_ms: start.elapsed().as_millis() as u64,
         sandbox,

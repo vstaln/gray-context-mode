@@ -411,9 +411,30 @@ pub fn db_path() -> std::path::PathBuf {
         .ok()
         .filter(|s| !s.is_empty())
         .map(std::path::PathBuf::from)
-        .or_else(|| std::env::var("HOME").ok().map(|h| std::path::PathBuf::from(h).join(".gray")))
+        .or_else(|| user_home().map(|h| h.join(".gray")))
         .unwrap_or_else(|| std::env::temp_dir().join("gray"));
     home.join("context-mode").join("kb.sqlite")
+}
+
+fn user_home() -> Option<std::path::PathBuf> {
+    #[cfg(windows)]
+    {
+        std::env::var_os("USERPROFILE")
+            .map(std::path::PathBuf::from)
+            .or_else(|| {
+                let drive = std::env::var_os("HOMEDRIVE")?;
+                let path = std::env::var_os("HOMEPATH")?;
+                Some(std::path::PathBuf::from(format!(
+                    "{}{}",
+                    drive.to_string_lossy(),
+                    path.to_string_lossy()
+                )))
+            })
+    }
+    #[cfg(not(windows))]
+    {
+        std::env::var_os("HOME").map(std::path::PathBuf::from)
+    }
 }
 
 #[cfg(test)]
