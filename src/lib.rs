@@ -83,6 +83,7 @@ pub fn manifest() -> Value {
         "sidecar_args": ["sidecar"],
         "tools": [exec_tool_def(), search_tool_def()],
         "commands": ["/context-mode"],
+        "command_descriptions": {"/context-mode": "run, search and clear captured command output"},
         "hooks": ["prompt/context"],
         "completion": ["exec", "search", "stats", "clear"],
     })
