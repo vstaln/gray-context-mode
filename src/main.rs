@@ -117,7 +117,11 @@ fn cli_search(argv: &[String]) -> i32 {
     if let Some(n) = argv.get(2).and_then(|s| s.parse::<u64>().ok()) {
         args["limit"] = json!(n);
     }
-    let out = gray_context_mode::dispatch("tool/call", &json!({"name":"ctx_search","args":args}), &db());
+    let out = gray_context_mode::dispatch(
+        "tool/call",
+        &json!({"name":"ctx_search","args":args}),
+        &db(),
+    );
     if let Some(text) = out.get("content").and_then(Value::as_str) {
         println!("{text}");
         if out.get("is_error").and_then(Value::as_bool) == Some(true) {
@@ -135,7 +139,11 @@ fn cli_stats() -> i32 {
     match gray_context_mode::store::Store::open(&path).and_then(|s| s.stats()) {
         Ok((runs, chunks)) => {
             let size = std::fs::metadata(&path).map(|m| m.len()).unwrap_or(0);
-            println!("{} — {runs} runs, {chunks} chunks, {} KB", path.display(), size / 1024);
+            println!(
+                "{} — {runs} runs, {chunks} chunks, {} KB",
+                path.display(),
+                size / 1024
+            );
             0
         }
         Err(e) => {
