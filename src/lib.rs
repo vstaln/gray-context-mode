@@ -82,9 +82,15 @@ pub fn manifest() -> Value {
         "protocol": PROTOCOL,
         "sidecar_args": ["sidecar"],
         "tools": [exec_tool_def(), search_tool_def()],
+        "description": "searchable store for long command output",
         "commands": [],
         "hooks": ["prompt/context"],
-        "completion": ["exec", "search", "stats", "clear"],
+        "completion": [
+            {"arg": "exec", "description": "run a command, keep its output out of context"},
+            {"arg": "search", "description": "search captured output"},
+            {"arg": "stats", "description": "store size and counts"},
+            {"arg": "clear", "description": "delete captured output"},
+        ],
     })
 }
 
@@ -156,11 +162,7 @@ fn ctx_exec(db: &std::path::Path, params: &Value) -> Value {
             return tool_error(format!("ctx_exec: KB open failed: {e}"));
         }
     };
-    let run_id = match store.begin_run(
-        command,
-        &result.workdir.to_string_lossy(),
-        result.sandbox,
-    ) {
+    let run_id = match store.begin_run(command, &result.workdir.to_string_lossy(), result.sandbox) {
         Ok(id) => id,
         Err(e) => {
             result.cleanup();
@@ -290,8 +292,8 @@ fn ctx_search(db: &std::path::Path, params: &Value) -> Value {
                 if line.contains('\u{2}') {
                     let lo = i.saturating_sub(context as usize);
                     let hi = (i + context as usize + 1).min(lines.len());
-                    for j in lo..hi {
-                        emit[j] = true;
+                    for flag in emit.iter_mut().take(hi).skip(lo) {
+                        *flag = true;
                     }
                 }
             }
