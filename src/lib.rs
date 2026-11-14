@@ -292,8 +292,8 @@ fn ctx_search(db: &std::path::Path, params: &Value) -> Value {
                 if line.contains('\u{2}') {
                     let lo = i.saturating_sub(context as usize);
                     let hi = (i + context as usize + 1).min(lines.len());
-                    for j in lo..hi {
-                        emit[j] = true;
+                    for flag in emit.iter_mut().take(hi).skip(lo) {
+                        *flag = true;
                     }
                 }
             }

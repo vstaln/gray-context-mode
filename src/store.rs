@@ -200,7 +200,7 @@ impl Store {
             .execute(
                 "INSERT INTO chunks (content, run_id, stream, start_line)
                  VALUES (?1, ?2, ?3, ?4)",
-                params![content, run_id as i64, stream, start_line as i64],
+                params![content, run_id, stream, start_line],
             )
             .map_err(|e| format!("insert chunk: {e}"))?;
         Ok(())
@@ -257,10 +257,7 @@ impl Store {
                AND (chunks.stream = ?5 OR ?5 = '')
              ORDER BY bm25(chunks)
              LIMIT ?4";
-        let mut stmt = self
-            .conn
-            .prepare(&sql)
-            .map_err(|e| format!("search: {e}"))?;
+        let mut stmt = self.conn.prepare(sql).map_err(|e| format!("search: {e}"))?;
         let rows = stmt
             .query_map(
                 params![query, src_id, src_like, limit as i64, stream],
