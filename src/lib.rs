@@ -83,7 +83,8 @@ pub fn manifest() -> Value {
         "sidecar_args": ["sidecar"],
         "tools": [exec_tool_def(), search_tool_def()],
         "description": "searchable store for long command output",
-        "commands": [],
+        "commands": ["/context-mode"],
+        "command_descriptions": {"/context-mode": "run, search and clear captured command output"},
         "hooks": ["prompt/context"],
         "completion": [
             {"arg": "exec", "description": "run a command, keep its output out of context"},
@@ -345,12 +346,57 @@ fn ctx_search(db: &std::path::Path, params: &Value) -> Value {
     json!({ "content": sections.join("\n") })
 }
 
+fn run_command(params: &Value) -> Value {
+    let mut args: Vec<String> = params
+        .get("args")
+        .and_then(Value::as_array)
+        .map(|a| {
+            a.iter()
+                .filter_map(|v| v.as_str().map(str::to_string))
+                .collect()
+        })
+        .unwrap_or_default();
+    let head = args.first().map(String::as_str);
+    if matches!(head, Some("sidecar" | "run")) {
+        return json!({ "text": "Run `gray-context-mode` in a terminal to serve the sidecar." });
+    }
+    if args.is_empty() {
+        args.push("stats".to_string());
+    }
+    let Ok(exe) = std::env::current_exe() else {
+        return json!({ "text": "cannot locate gray-context-mode binary" });
+    };
+    match std::process::Command::new(exe).args(&args).output() {
+        Ok(out) => {
+            let stdout = String::from_utf8_lossy(&out.stdout);
+            let stderr = String::from_utf8_lossy(&out.stderr);
+            let combined = [stdout.trim(), stderr.trim()]
+                .into_iter()
+                .filter(|t| !t.is_empty())
+                .collect::<Vec<_>>()
+                .join("\n");
+            let text = if combined.is_empty() {
+                if out.status.success() {
+                    "ok".to_string()
+                } else {
+                    format!("exited with {}", out.status)
+                }
+            } else {
+                combined
+            };
+            json!({ "text": text })
+        }
+        Err(e) => json!({ "text": format!("failed to run command: {e}") }),
+    }
+}
+
 /// One protocol call → result value. `db` is the KB path (usually
 /// `store::db_path()`; injected for tests).
 pub fn dispatch(method: &str, params: &Value, db: &std::path::Path) -> Value {
     match method {
         "plugin/manifest" => manifest(),
         "prompt/context" => json!({ "text": prompt_guidance() }),
+        "command/run" => run_command(params),
         "tool/call" => {
             let name = params.get("name").and_then(Value::as_str).unwrap_or("");
             match name {
