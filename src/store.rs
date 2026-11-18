@@ -48,8 +48,7 @@ impl Store {
             std::fs::create_dir_all(parent)
                 .map_err(|e| format!("create {}: {e}", parent.display()))?;
         }
-        let conn =
-            Connection::open(path).map_err(|e| format!("open {}: {e}", path.display()))?;
+        let conn = Connection::open(path).map_err(|e| format!("open {}: {e}", path.display()))?;
         let _ = conn.pragma_update(None, "journal_mode", "WAL");
         let _ = conn.pragma_update(None, "busy_timeout", 5000i64);
         conn.execute_batch(
@@ -178,9 +177,7 @@ impl Store {
             stat.lines += 1;
             stat.bytes += n as u64;
             chunk.push_str(&String::from_utf8_lossy(&buf));
-            if stat.lines - chunk_start + 1 >= CHUNK_LINES as u64
-                || chunk.len() >= CHUNK_BYTES
-            {
+            if stat.lines - chunk_start + 1 >= CHUNK_LINES as u64 || chunk.len() >= CHUNK_BYTES {
                 self.insert_chunk(run_id, stream, chunk_start, &chunk)?;
                 chunk.clear();
                 chunk_start = stat.lines + 1;
@@ -203,7 +200,7 @@ impl Store {
             .execute(
                 "INSERT INTO chunks (content, run_id, stream, start_line)
                  VALUES (?1, ?2, ?3, ?4)",
-                params![content, run_id as i64, stream, start_line as i64],
+                params![content, run_id, stream, start_line],
             )
             .map_err(|e| format!("insert chunk: {e}"))?;
         Ok(())
@@ -260,25 +257,22 @@ impl Store {
                AND (chunks.stream = ?5 OR ?5 = '')
              ORDER BY bm25(chunks)
              LIMIT ?4";
-        let mut stmt = self
-            .conn
-            .prepare(&sql)
-            .map_err(|e| format!("search: {e}"))?;
+        let mut stmt = self.conn.prepare(sql).map_err(|e| format!("search: {e}"))?;
         let rows = stmt
             .query_map(
                 params![query, src_id, src_like, limit as i64, stream],
                 |row| {
-                Ok(Hit {
-                    run_id: row.get(0)?,
-                    label: row.get(1)?,
-                    stream: row.get(2)?,
-                    start_line: row.get::<_, i64>(3)? as u64,
-                    highlighted: row
-                        .get::<_, Option<String>>(4)?
-                        .or_else(|| row.get::<_, Option<String>>(5).ok().flatten())
-                        .unwrap_or_default(),
-                })
-            },
+                    Ok(Hit {
+                        run_id: row.get(0)?,
+                        label: row.get(1)?,
+                        stream: row.get(2)?,
+                        start_line: row.get::<_, i64>(3)? as u64,
+                        highlighted: row
+                            .get::<_, Option<String>>(4)?
+                            .or_else(|| row.get::<_, Option<String>>(5).ok().flatten())
+                            .unwrap_or_default(),
+                    })
+                },
             )
             .map_err(|e| format!("search: {e}"))?;
         let mut hits = Vec::new();
@@ -311,9 +305,7 @@ impl Store {
             )
             .map_err(|e| e.to_string())?;
         let rows = stmt
-            .query_map(params![limit], |r| {
-                Ok((r.get(0)?, r.get(1)?, r.get(2)?))
-            })
+            .query_map(params![limit], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)))
             .map_err(|e| e.to_string())?;
         let mut out = Vec::new();
         for row in rows {
@@ -481,17 +473,51 @@ mod tests {
         let a = store.begin_run("a", "/x", "cwd").unwrap();
         indexed(&store, a, "stdout", "needle one\n");
         store
-            .finish_run(a, Some("first"), Some(0), false, 1, StreamStat::default(), StreamStat::default())
+            .finish_run(
+                a,
+                Some("first"),
+                Some(0),
+                false,
+                1,
+                StreamStat::default(),
+                StreamStat::default(),
+            )
             .unwrap();
         let b = store.begin_run("b", "/x", "cwd").unwrap();
         indexed(&store, b, "stdout", "needle two\n");
         store
-            .finish_run(b, Some("second"), Some(0), false, 1, StreamStat::default(), StreamStat::default())
+            .finish_run(
+                b,
+                Some("second"),
+                Some(0),
+                false,
+                1,
+                StreamStat::default(),
+                StreamStat::default(),
+            )
             .unwrap();
 
-        assert_eq!(store.search("needle", Some("exec:1"), None, 10).unwrap().len(), 1);
-        assert_eq!(store.search("needle", Some("exec:2"), None, 10).unwrap().len(), 1);
-        assert_eq!(store.search("needle", Some("second"), None, 10).unwrap().len(), 1);
+        assert_eq!(
+            store
+                .search("needle", Some("exec:1"), None, 10)
+                .unwrap()
+                .len(),
+            1
+        );
+        assert_eq!(
+            store
+                .search("needle", Some("exec:2"), None, 10)
+                .unwrap()
+                .len(),
+            1
+        );
+        assert_eq!(
+            store
+                .search("needle", Some("second"), None, 10)
+                .unwrap()
+                .len(),
+            1
+        );
         assert_eq!(store.search("needle", None, None, 10).unwrap().len(), 2);
         let hits = store.search("needle", Some("exec:1"), None, 10).unwrap();
         assert_eq!(hits[0].label, "exec:1:first");
@@ -504,7 +530,15 @@ mod tests {
         let id = store.begin_run("c", "/x", "cwd").unwrap();
         indexed(&store, id, "stderr", "error[E0308]: mismatched types\n");
         store
-            .finish_run(id, None, Some(1), false, 1, StreamStat::default(), StreamStat::default())
+            .finish_run(
+                id,
+                None,
+                Some(1),
+                false,
+                1,
+                StreamStat::default(),
+                StreamStat::default(),
+            )
             .unwrap();
         // `error[E0308]` would explode raw FTS5 (bad column); fallback finds it.
         let hits = store.search("mismatched types", None, None, 10).unwrap();
@@ -533,7 +567,15 @@ mod tests {
         let id = store.begin_run("e", "/x", "cwd").unwrap();
         indexed(&store, id, "stdout", "x\n");
         store
-            .finish_run(id, None, Some(0), false, 1, StreamStat::default(), StreamStat::default())
+            .finish_run(
+                id,
+                None,
+                Some(0),
+                false,
+                1,
+                StreamStat::default(),
+                StreamStat::default(),
+            )
             .unwrap();
         assert_eq!(store.clear().unwrap(), 1);
         assert_eq!(store.run_count(), 0);

@@ -25,15 +25,50 @@ const KILL_GRACE: Duration = Duration::from_secs(10);
 /// Subset of the context-mode denylist covering the shells/runtimes an
 /// agent actually spawns.
 const ENV_DENY: &[&str] = &[
-    "BASH_ENV", "ENV", "PROMPT_COMMAND", "PS4", "SHELLOPTS", "BASHOPTS",
-    "CDPATH", "INPUTRC", "BASH_XTRACEFD", "LD_PRELOAD", "DYLD_INSERT_LIBRARIES",
-    "NODE_OPTIONS", "NODE_PATH", "PYTHONSTARTUP", "PYTHONHOME", "PYTHONINSPECT",
-    "PYTHONWARNINGS", "PYTHONBREAKPOINT", "RUBYOPT", "RUBYLIB", "PERL5OPT",
-    "PERL5LIB", "PERLLIB", "PERL5DB", "GOFLAGS", "CGO_CFLAGS", "CGO_LDFLAGS",
-    "RUSTC", "RUSTC_WRAPPER", "RUSTC_WORKSPACE_WRAPPER", "CARGO_BUILD_RUSTC",
-    "CARGO_BUILD_RUSTC_WRAPPER", "RUSTFLAGS", "OPENSSL_CONF", "OPENSSL_ENGINES",
-    "CC", "CXX", "AR", "GIT_SSH", "GIT_SSH_COMMAND", "GIT_ASKPASS",
-    "GIT_EXEC_PATH", "GIT_CONFIG_GLOBAL", "GIT_CONFIG_SYSTEM",
+    "BASH_ENV",
+    "ENV",
+    "PROMPT_COMMAND",
+    "PS4",
+    "SHELLOPTS",
+    "BASHOPTS",
+    "CDPATH",
+    "INPUTRC",
+    "BASH_XTRACEFD",
+    "LD_PRELOAD",
+    "DYLD_INSERT_LIBRARIES",
+    "NODE_OPTIONS",
+    "NODE_PATH",
+    "PYTHONSTARTUP",
+    "PYTHONHOME",
+    "PYTHONINSPECT",
+    "PYTHONWARNINGS",
+    "PYTHONBREAKPOINT",
+    "RUBYOPT",
+    "RUBYLIB",
+    "PERL5OPT",
+    "PERL5LIB",
+    "PERLLIB",
+    "PERL5DB",
+    "GOFLAGS",
+    "CGO_CFLAGS",
+    "CGO_LDFLAGS",
+    "RUSTC",
+    "RUSTC_WRAPPER",
+    "RUSTC_WORKSPACE_WRAPPER",
+    "CARGO_BUILD_RUSTC",
+    "CARGO_BUILD_RUSTC_WRAPPER",
+    "RUSTFLAGS",
+    "OPENSSL_CONF",
+    "OPENSSL_ENGINES",
+    "CC",
+    "CXX",
+    "AR",
+    "GIT_SSH",
+    "GIT_SSH_COMMAND",
+    "GIT_ASKPASS",
+    "GIT_EXEC_PATH",
+    "GIT_CONFIG_GLOBAL",
+    "GIT_CONFIG_SYSTEM",
     "GIT_TEMPLATE_DIR",
 ];
 
@@ -87,11 +122,17 @@ fn bwrap_ok() -> bool {
         let probe = Command::new("bwrap")
             .args([
                 "--die-with-parent",
-                "--ro-bind", "/", "/",
-                "--dev", "/dev",
-                "--proc", "/proc",
-                "--tmpfs", "/tmp",
-                "--", "true",
+                "--ro-bind",
+                "/",
+                "/",
+                "--dev",
+                "/dev",
+                "--proc",
+                "/proc",
+                "--tmpfs",
+                "/tmp",
+                "--",
+                "true",
             ])
             .stdin(Stdio::null())
             .stdout(Stdio::null())
@@ -131,11 +172,7 @@ fn scrub_env(cmd: &mut Command) {
 /// Run `command` through the platform shell (`bash -c`, `cmd /C` on
 /// Windows) with stdout/stderr captured to files.
 /// `cwd`: caller-requested work dir (must exist); None → fresh scratch dir.
-pub fn run(
-    command: &str,
-    cwd: Option<&Path>,
-    timeout_ms: u64,
-) -> Result<ExecResult, String> {
+pub fn run(command: &str, cwd: Option<&Path>, timeout_ms: u64) -> Result<ExecResult, String> {
     let timeout_ms = timeout_ms.clamp(1_000, MAX_TIMEOUT_MS);
     let capture_dir = scratch_dir("cap")?;
     let (workdir, scratch_workdir) = match cwd {
@@ -162,10 +199,15 @@ pub fn run(
             let mut c = Command::new("bwrap");
             c.args([
                 "--die-with-parent",
-                "--ro-bind", "/", "/",
-                "--dev", "/dev",
-                "--proc", "/proc",
-                "--tmpfs", "/tmp",
+                "--ro-bind",
+                "/",
+                "/",
+                "--dev",
+                "/dev",
+                "--proc",
+                "/proc",
+                "--tmpfs",
+                "/tmp",
             ]);
             c.arg("--bind").arg(&workdir).arg(&workdir);
             if capture_dir != workdir {
